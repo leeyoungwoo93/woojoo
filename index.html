@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>우주부부</title>
+<!-- 아이폰 '홈 화면에 추가' 했을 때: 아이콘·이름·주소창 없는 전체 화면
+     manifest는 일부러 두지 않는다. manifest의 시작 주소가 있으면 링크에 붙은 키(?u=…)가 빠진 채로 열린다. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="우주부부">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#202027" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<!--
+  우주부부 홈 화면용 껍데기 페이지 (GitHub Pages)
+  - 실제 화면은 구글 Apps Script 웹앱이고, 이 페이지는 그걸 전체 화면으로 띄우기만 한다.
+  - 웹앱 링크(키 포함)는 이 파일에 적지 않는다. 주소 뒤 ?u= 로만 받는다 → 저장소를 공개해도 안전.
+  - 처음 열면 링크 붙여넣는 화면 → 확인 → 주소가 ?u=… 로 바뀜 → 그 상태에서 홈 화면에 추가.
+-->
+<style>
+:root{--bg:#FFFFFF;--text:#191F28;--sub:#6B7684;--field:#F2F4F6;--bd:#E5E8EB;--p:#3182F6;--red:#F04452}
+@media (prefers-color-scheme:dark){:root{--bg:#202027;--text:#F2F4F6;--sub:#B0B8C1;--field:#2C2C35;--bd:#33333D;--p:#4593FC}}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",system-ui,sans-serif;letter-spacing:-.2px}
+/* 화면: 상태바 아래부터, 아래는 홈 인디케이터 위까지 (그 아래는 바탕색) */
+#app{position:fixed;left:0;right:0;top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);
+  width:100%;height:calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));border:0;display:none;background:var(--bg)}
+#loading{position:fixed;inset:0;display:none;place-items:center;color:var(--sub);font-size:13px}
+#setup{display:none;max-width:420px;margin:0 auto;padding:calc(48px + env(safe-area-inset-top)) 20px 32px}
+#setup img{width:64px;height:64px;border-radius:15px;display:block}
+h1{font-size:22px;font-weight:700;margin:16px 0 6px;letter-spacing:-.5px}
+p{margin:0;color:var(--sub);font-size:14px}
+ol{margin:20px 0 0;padding-left:20px;color:var(--sub);font-size:14px}
+ol li{margin:4px 0}
+textarea{width:100%;box-sizing:border-box;margin-top:20px;min-height:84px;padding:12px 14px;border:1px solid var(--bd);border-radius:12px;
+  background:var(--field);color:var(--text);font:13px/1.45 ui-monospace,Menlo,monospace;resize:none;outline:none}
+textarea:focus{border-color:var(--p)}
+button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;background:var(--p);color:#fff;font:inherit;font-weight:600}
+#err{color:var(--red);font-size:13px;margin-top:8px;min-height:18px}
+</style>
+</head>
+<body>
+<div id="loading">불러오는 중…</div>
+<iframe id="app" title="우주부부" allow="clipboard-write"></iframe>
+
+<div id="setup">
+  <img src="icon-180.png" alt="">
+  <h1>우주부부 시작하기</h1>
+  <p>한 번만 설정하면 홈 화면에서 앱처럼 열려요.</p>
+  <ol>
+    <li>단톡방에 온 우주부부 링크를 길게 눌러 복사</li>
+    <li>아래 칸에 붙여넣고 확인</li>
+    <li>사파리 아래 공유 버튼 → <b>홈 화면에 추가</b></li>
+  </ol>
+  <textarea id="link" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+  <div id="err"></div>
+  <button id="ok">확인</button>
+</div>
+
+<script>
+'use strict';
+// 받을 수 있는 링크: Apps Script 웹앱 주소 + 키 (회사·학교 계정 주소 형식 포함)
+var LINK = /^https:\/\/script\.google\.com\/(?:a\/macros\/[^\/\s]+|macros)\/s\/[\w-]+\/exec\?k=[A-Za-z0-9]{16,}$/;
+var $ = function (id) { return document.getElementById(id); };
+
+function start(u) {
+  $('loading').style.display = 'grid';
+  var f = $('app');
+  f.onload = function () { $('loading').style.display = 'none'; };
+  f.src = u;
+  f.style.display = 'block';
+}
+
+function setup(msg) {
+  $('setup').style.display = 'block';
+  if (msg) $('err').textContent = msg;
+  $('ok').onclick = function () {
+    // 단톡방에서 복사하면 앞뒤 글자가 딸려 올 수 있어 링크 부분만 꺼낸다
+    var m = $('link').value.match(/https:\/\/script\.google\.com\/\S+/);
+    var u = m ? m[0].replace(/[)\].,]+$/, '') : '';
+    if (!LINK.test(u)) { $('err').textContent = '우주부부 링크가 아니에요. 단톡방의 …/exec?k=… 링크를 붙여넣어 주세요.'; return; }
+    // 주소에 링크를 붙여 둔다 → 이 주소 그대로 홈 화면에 추가된다
+    location.replace(location.pathname + '?u=' + encodeURIComponent(u));
+  };
+}
+
+var u = new URLSearchParams(location.search).get('u') || '';
+if (LINK.test(u)) start(u);
+else setup(u ? '링크가 올바르지 않아요. 다시 붙여넣어 주세요.' : '');
+</script>
+</body>
+</html>
