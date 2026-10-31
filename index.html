@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>우주부부</title>
 <!-- 아이폰 '홈 화면에 추가' 했을 때: 아이콘·이름·주소창 없는 전체 화면
-     manifest는 일부러 두지 않는다. manifest의 시작 주소가 있으면 링크에 붙은 키(?u=…)가 빠진 채로 열린다. -->
+     manifest는 알림(웹 푸시) 때문에 둔다. 시작 주소(start_url)는 일부러 안 적는다 → 추가할 때 주소(?u=…) 그대로 열린다.
+     그래도 키가 빠지면 이 기기에 저장해 둔 링크로 연다. -->
+<link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="우주부부">
@@ -40,11 +42,20 @@ textarea{width:100%;box-sizing:border-box;margin-top:20px;min-height:84px;paddin
 textarea:focus{border-color:var(--p)}
 button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;background:var(--p);color:#fff;font:inherit;font-weight:600}
 #err{color:var(--red);font-size:13px;margin-top:8px;min-height:18px}
+/* 알림 켜기 띠: 매트 로즈, 화면 위쪽에 잠깐 */
+#pushbar{position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 8px);z-index:10;display:none;align-items:center;gap:8px;
+  padding:10px 12px;border-radius:14px;background:#F5E6E6;color:#4A3437;font-size:14px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+#pushbar span{flex:1}
+#pushbar button{width:auto;margin:0;padding:8px 12px;border-radius:10px;font-size:13px}
+#pushOn{background:#B5838D;color:#fff}
+#pushNo{background:transparent;color:#8A6F73}
+@media (prefers-color-scheme:dark){#pushbar{background:#3A2E31;color:#F2E6E8}#pushNo{color:#C9AEB3}}
 </style>
 </head>
 <body>
 <div id="loading">불러오는 중…</div>
 <iframe id="app" title="우주부부" allow="clipboard-write"></iframe>
+<div id="pushbar"><span>채팅 알림을 이 폰으로 받을까요?</span><button id="pushNo">나중에</button><button id="pushOn">켜기</button></div>
 
 <div id="setup">
   <img src="icon-180.png" alt="">
@@ -67,6 +78,7 @@ var LINK = /^https:\/\/script\.google\.com\/(?:a\/macros\/[^\/\s]+|macros)\/s\/[
 var $ = function (id) { return document.getElementById(id); };
 
 function start(u) {
+  try { localStorage.setItem('u', u); } catch (e) {}
   $('loading').style.display = 'grid';
   var f = $('app');
   f.onload = function () { $('loading').style.display = 'none'; };
@@ -88,8 +100,59 @@ function setup(msg) {
 }
 
 var u = new URLSearchParams(location.search).get('u') || '';
+if (!u) { try { u = localStorage.getItem('u') || ''; } catch (e) {} }
 if (LINK.test(u)) start(u);
 else setup(u ? '링크가 올바르지 않아요. 다시 붙여넣어 주세요.' : '');
+
+// ───── 채팅 알림 (iOS 16.4 이상, 홈 화면 앱에서만) ─────
+// 안쪽 우주부부 화면이 공개키를 보내 오면 → 켜기 띠 → 구독을 만들어 안쪽 화면에 돌려준다(영우 폰으로 전달)
+var push = { key: '', src: null, open: (new URLSearchParams(location.search).get('open') || '') };
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(function () {});
+  navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.t === 'open') tell({ t: 'wz-open-chat' }); });
+}
+function tell(m) { try { if (push.src) push.src.postMessage(m, '*'); } catch (e) {} }
+function canPush() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window &&
+    (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches);
+}
+function keyBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+  var r = atob(s), a = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) a[i] = r.charCodeAt(i); return a;
+}
+function subscribe(on) {
+  navigator.serviceWorker.ready.then(function (reg) {
+    return reg.pushManager.getSubscription().then(function (s) {
+      if (s && localStorage.getItem('pushKey') === push.key) return s;
+      return (s ? s.unsubscribe() : Promise.resolve()).then(function () {
+        return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(push.key) });
+      });
+    });
+  }).then(function (s) {
+    // 폰이 이미 갖고 있는 구독이면 하루 한 번만 다시 보낸다
+    var j = JSON.stringify(s) + new Date().toISOString().slice(0, 10);
+    if (on && localStorage.getItem('pushSent') === j) return;
+    localStorage.setItem('pushKey', push.key); localStorage.setItem('pushSent', j);
+    tell({ t: 'wz-push-sub', sub: s.toJSON() });
+  }).catch(function () {});
+}
+window.addEventListener('message', function (e) {
+  var d = e.data || {}, host = '';
+  try { host = new URL(e.origin).hostname; } catch (x) { return; }
+  if (!/(^|\.)(googleusercontent|google)\.com$/.test(host) || d.t !== 'wz-push-key' || !d.key) return;
+  push.key = d.key; push.src = e.source;
+  if (push.open === 'chat') { push.open = ''; tell({ t: 'wz-open-chat' }); }
+  if (!canPush()) return;
+  if (Notification.permission === 'granted') return subscribe(d.on);
+  if (Notification.permission === 'denied' || +(localStorage.getItem('pushLater') || 0) > Date.now()) return;
+  $('pushbar').style.display = 'flex';
+});
+$('pushOn').onclick = function () {
+  $('pushbar').style.display = 'none';
+  // 아이폰은 버튼을 누른 그 순간에만 권한을 물을 수 있다
+  Notification.requestPermission().then(function (p) { if (p === 'granted') subscribe(false); });
+};
+$('pushNo').onclick = function () { $('pushbar').style.display = 'none'; localStorage.setItem('pushLater', String(Date.now() + 7 * 864e5)); };
 </script>
 </body>
 </html>
