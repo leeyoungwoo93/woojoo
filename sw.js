@@ -16,6 +16,6 @@ self.addEventListener('notificationclick', function (e) {
   var open = (e.notification.data || {}).open || 'chat';
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (cs) {
     if (cs.length) { cs[0].postMessage({ t: 'open', open: open }); return cs[0].focus(); }
-    return self.clients.openWindow('./?open=' + open);
+    return self.clients.openWindow('./?open=' + encodeURIComponent(open));
   }));
 });

@@ -14,8 +14,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#202027" media="(prefers-color-scheme: dark)">
-<link rel="apple-touch-icon" href="icon-180.png">
-<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png?v=2">
+<link rel="icon" type="image/png" href="icon-192.png?v=2">
 <!--
   우주부부 홈 화면용 껍데기 페이지 (GitHub Pages)
   - 실제 화면은 구글 Apps Script 웹앱이고, 이 페이지는 그걸 전체 화면으로 띄우기만 한다.
@@ -30,7 +30,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
 /* 화면: 상태바 아래부터, 아래는 홈 인디케이터 위까지 (그 아래는 바탕색) */
 #app{position:fixed;left:0;right:0;top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);
   width:100%;height:calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));border:0;display:none;background:var(--bg)}
-#loading{position:fixed;inset:0;display:none;place-items:center;color:var(--sub);font-size:13px}
+#loading{position:fixed;inset:0;display:none;place-items:center;color:var(--sub);font-size:13px;background:var(--bg);z-index:5;transition:opacity .35s}
+#loading.out{opacity:0;pointer-events:none}
+/* 여는 동안: 마지막으로 받아 둔 오늘 요약을 바로 보여 줌 (빈 화면 대신) */
+.sp{width:min(320px,86vw);text-align:center}.sp img{width:64px;height:64px;border-radius:15px}.sp h2{margin:10px 0 2px;font-size:18px;color:var(--text)}
+.sp .k{font-size:14px;color:#B86B78;font-weight:600}.sp ul{list-style:none;margin:14px 0 0;padding:0;text-align:left}.sp li{display:flex;gap:8px;padding:7px 12px;border-radius:10px;background:var(--field);margin-top:6px;font-size:13px;color:var(--text)}
+.sp li b{color:#B86B78;flex:none}.sp .w{margin-top:14px;font-size:12px;color:var(--sub)}
 #setup{display:none;max-width:420px;margin:0 auto;padding:calc(48px + env(safe-area-inset-top)) 20px 32px}
 #setup img{width:64px;height:64px;border-radius:15px;display:block}
 h1{font-size:22px;font-weight:700;margin:16px 0 6px;letter-spacing:-.5px}
@@ -53,8 +58,8 @@ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;backg
 </style>
 </head>
 <body>
-<div id="loading">불러오는 중…</div>
-<iframe id="app" title="우주부부" allow="clipboard-write"></iframe>
+<div id="loading"><div class="sp" id="spl"><img src="icon-180.png?v=2" alt=""><h2>우주부부</h2><div class="w">불러오는 중…</div></div></div>
+<iframe id="app" title="우주부부" allow="clipboard-write; microphone; web-share"></iframe>
 <div id="pushbar"><span>채팅 알림을 이 폰으로 받을까요?</span><button id="pushNo">나중에</button><button id="pushOn">켜기</button></div>
 
 <div id="setup">
@@ -77,11 +82,21 @@ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;backg
 var LINK = /^https:\/\/script\.google\.com\/(?:a\/macros\/[^\/\s]+|macros)\/s\/[\w-]+\/exec\?k=[A-Za-z0-9]{16,}$/;
 var $ = function (id) { return document.getElementById(id); };
 
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+// 마지막 오늘 요약 (위젯과 같은 &w=1). 저장해 둔 것부터 바로 그리고, 새로 받아 오면 바꿈
+function splash(d) {
+  if (!d || !d.ok) return;
+  var l = (d.today || []).slice(0, 3).map(function (e) { return '<li><b>' + esc(e.t) + '</b><span>' + esc(e.title) + '</span></li>'; }).join('');
+  if (d.chat) l += '<li><b>' + esc(d.chat.who) + '</b><span>' + esc(d.chat.t) + '</span></li>';
+  $('spl').innerHTML = '<img src="icon-180.png?v=2" alt=""><h2>우주부부</h2><div class="k">♥ ' + d.love + '일 · 결혼 D-' + d.wed + '</div><ul>' + (l || '<li><span>오늘 일정 없음</span></li>') + '</ul><div class="w">새로 받아 오는 중…</div>';
+}
 function start(u) {
   try { localStorage.setItem('u', u); } catch (e) {}
   $('loading').style.display = 'grid';
+  try { splash(JSON.parse(localStorage.getItem('wcache') || 'null')); } catch (e) {}
+  try { fetch(u + '&w=1').then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) { localStorage.setItem('wcache', JSON.stringify(d)); if (!$('loading').classList.contains('out')) splash(d); } }).catch(function () {}); } catch (e) {}
   var f = $('app');
-  f.onload = function () { $('loading').style.display = 'none'; };
+  f.onload = function () { $('loading').classList.add('out'); setTimeout(function () { $('loading').style.display = 'none'; }, 400); };
   f.src = u;
   f.style.display = 'block';
 }
@@ -109,8 +124,10 @@ else setup(u ? '링크가 올바르지 않아요. 다시 붙여넣어 주세요.
 var push = { key: '', src: null, open: (new URLSearchParams(location.search).get('open') || '') };
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function () {});
-  navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.t === 'open') tell({ t: 'wz-open-chat' }); });
+  navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.t === 'open') openIn(e.data.open); });
 }
+// 알림을 누르면 열 화면: 채팅이면 예전 신호, 그 밖(news:… 소식 카드 등)은 wz-open
+function openIn(o) { if (!o || o === 'chat') tell({ t: 'wz-open-chat' }); else tell({ t: 'wz-open', open: o }); }
 function tell(m) { try { if (push.src) push.src.postMessage(m, '*'); } catch (e) {} }
 function canPush() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window &&
@@ -141,7 +158,7 @@ window.addEventListener('message', function (e) {
   try { host = new URL(e.origin).hostname; } catch (x) { return; }
   if (!/(^|\.)(googleusercontent|google)\.com$/.test(host) || d.t !== 'wz-push-key' || !d.key) return;
   push.key = d.key; push.src = e.source;
-  if (push.open === 'chat') { push.open = ''; tell({ t: 'wz-open-chat' }); }
+  if (push.open) { var o = push.open; push.open = ''; openIn(o); }
   if (!canPush()) return;
   if (Notification.permission === 'granted') return subscribe(d.on);
   if (Notification.permission === 'denied' || +(localStorage.getItem('pushLater') || 0) > Date.now()) return;
